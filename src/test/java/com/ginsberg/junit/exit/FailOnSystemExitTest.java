@@ -27,68 +27,66 @@ package com.ginsberg.junit.exit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-
+import us.fatehi.SystemExit;
 import static com.ginsberg.junit.exit.TestUtils.assertTestFails;
 import static com.ginsberg.junit.exit.TestUtils.assertTestSucceeds;
 
 class FailOnSystemExitTest {
 
+  @Test
+  @DisplayName("@FailOnSystemExit on method - exception caught and fails test")
+  void failOnSystemExitOnMethod() {
+    assertTestFails(FailOnSystemExitAtTestLevel.class, "callsSystemExit");
+  }
+
+  @Test
+  @DisplayName("@FailOnSystemExit on method - System.exit not called")
+  void succeedWhenNotCallingSystemExitInMethod() {
+    assertTestSucceeds(FailOnSystemExitAtTestLevel.class, "doesNotCallSystemExit");
+  }
+
+  @Test
+  @DisplayName("@FailOnSystemExit on class - exception caught and fails test")
+  void failOnSystemExitOnClass() {
+    assertTestFails(FailOnSystemExitAtClassLevel.class);
+  }
+
+  @Test
+  @DisplayName("@FailOnSystemExit on class - System.exit not called")
+  void succeedWhenNotCallingSystemExitOnClass() {
+    assertTestSucceeds(FailOnSystemExitAtClassLevelWithoutSystemExit.class);
+  }
+
+  @EnabledIfSystemProperty(named = "running_within_test", matches = "true")
+  static class FailOnSystemExitAtTestLevel {
     @Test
-    @DisplayName("@FailOnSystemExit on method - exception caught and fails test")
-    void failOnSystemExitOnMethod() {
-        assertTestFails(FailOnSystemExitAtTestLevel.class, "callsSystemExit");
-    }
-
-    @Test
-    @DisplayName("@FailOnSystemExit on method - System.exit not called")
-    void succeedWhenNotCallingSystemExitInMethod() {
-        assertTestSucceeds(FailOnSystemExitAtTestLevel.class, "doesNotCallSystemExit");
-    }
-
-    @Test
-    @DisplayName("@FailOnSystemExit on class - exception caught and fails test")
-    void failOnSystemExitOnClass() {
-        assertTestFails(FailOnSystemExitAtClassLevel.class);
-    }
-
-    @Test
-    @DisplayName("@FailOnSystemExit on class - System.exit not called")
-    void succeedWhenNotCallingSystemExitOnClass() {
-        assertTestSucceeds(FailOnSystemExitAtClassLevelWithoutSystemExit.class);
-    }
-
-    @EnabledIfSystemProperty(named = "running_within_test", matches = "true")
-    static class FailOnSystemExitAtTestLevel {
-        @Test
-        @FailOnSystemExit
-        void callsSystemExit() {
-            System.exit(42);
-        }
-
-        @Test
-        @FailOnSystemExit
-        void doesNotCallSystemExit() {
-            // Nothing to do
-        }
-    }
-
-    @EnabledIfSystemProperty(named = "running_within_test", matches = "true")
     @FailOnSystemExit
-    static class FailOnSystemExitAtClassLevel {
-        @Test
-        void callsSystemExit() {
-            System.exit(42);
-        }
+    void callsSystemExit() {
+      SystemExit.exit(42);
     }
 
-    @EnabledIfSystemProperty(named = "running_within_test", matches = "true")
+    @Test
     @FailOnSystemExit
-    static class FailOnSystemExitAtClassLevelWithoutSystemExit {
-        @Test
-        void doesNotCallSystemExit() {
-            // Nothing to do
-        }
+    void doesNotCallSystemExit() {
+      // Nothing to do
     }
+  }
 
+  @EnabledIfSystemProperty(named = "running_within_test", matches = "true")
+  @FailOnSystemExit
+  static class FailOnSystemExitAtClassLevel {
+    @Test
+    void callsSystemExit() {
+      SystemExit.exit(42);
+    }
+  }
 
+  @EnabledIfSystemProperty(named = "running_within_test", matches = "true")
+  @FailOnSystemExit
+  static class FailOnSystemExitAtClassLevelWithoutSystemExit {
+    @Test
+    void doesNotCallSystemExit() {
+      // Nothing to do
+    }
+  }
 }

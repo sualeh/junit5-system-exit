@@ -24,100 +24,107 @@
 
 package com.ginsberg.junit.exit;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.platform.commons.support.AnnotationSupport.findAnnotation;
+import java.lang.annotation.Annotation;
+import java.util.Optional;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.TestExecutionExceptionHandler;
-
-import java.lang.annotation.Annotation;
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.platform.commons.support.AnnotationSupport.findAnnotation;
+import us.fatehi.SystemExitException;
 
 /**
  * Does the work of installing the DisallowExitSecurityManager, interpreting the test results, and
  * returning the original SecurityManager to service.
  */
-public class SystemExitExtension implements BeforeEachCallback, AfterEachCallback, TestExecutionExceptionHandler {
-    private Integer expectedStatusCode;
-    private boolean failOnSystemExit;
-    private DisallowExitSecurityManager disallowExitSecurityManager;
-    private SecurityManager originalSecurityManager;
+public class SystemExitExtension
+    implements BeforeEachCallback, AfterEachCallback, TestExecutionExceptionHandler {
 
-    @Override
-    public void afterEach(ExtensionContext context) {
-        // Return the original SecurityManager, if any, to service.
-        System.setSecurityManager(originalSecurityManager);
+  private boolean failOnSystemExit;
+  private boolean expectSystemExit;
+  private Integer expectedStatusCode;
+  private boolean systemExitCalled;
+  private Integer systemExitCode;
 
-        try {
-            if (failOnSystemExit) {
-                assertEquals(
-                        0,
-                        disallowExitSecurityManager.getPreventedSystemExitCount(),
-                        "Unexpected System.exit(" + disallowExitSecurityManager.getFirstExitStatusCode() + ") caught"
-                );
-            } else if (expectedStatusCode == null) {
-                assertNotNull(
-                        disallowExitSecurityManager.getFirstExitStatusCode(),
-                        "Expected System.exit() to be called, but it was not"
-                );
-            } else {
-                assertEquals(
-                        expectedStatusCode,
-                        disallowExitSecurityManager.getFirstExitStatusCode(),
-                        "Expected System.exit(" + expectedStatusCode + ") to be called, but it was not."
-                );
-            }
-        } finally {
-            // Clear state so if this is run as part of a @ParameterizedTest, the next time through we'll have the
-            // correct state
-            expectedStatusCode = null;
-            failOnSystemExit = false;
-            disallowExitSecurityManager = null;
-        }
+  @Override
+  public void afterEach(final ExtensionContext context) {
+    try {
+      if (failOnSystemExit && systemExitCalled) {
+        fail("Unexpected System.exit(" + systemExitCode + ") caught");
+      }
+
+      if (expectSystemExit && expectedStatusCode == null && !systemExitCalled) {
+        fail("Expected System.exit() to be called, but it was not");
+      }
+
+      if (expectSystemExit && expectedStatusCode != null && !systemExitCalled) {
+        fail("Expected System.exit(" + expectedStatusCode + ") to be called, but it was not.");
+      }
+
+      if (expectSystemExit
+          && expectedStatusCode != null
+          && systemExitCalled
+          && systemExitCode != null) {
+        assertEquals(
+            expectedStatusCode,
+            systemExitCode,
+            "Expected System.exit(" + expectedStatusCode + ") to be called, but it was not.");
+      }
+    } finally {
+      // Clear state so if this is run as part of a @ParameterizedTest, the next time through we'll
+      // have the correct state
+      expectSystemExit = false;
+      expectedStatusCode = null;
+      failOnSystemExit = false;
+      systemExitCalled = false;
+      systemExitCode = null;
     }
+  }
 
-    @Override
-    public void beforeEach(final ExtensionContext context) {
-        // Set aside the current SecurityManager
-        originalSecurityManager = System.getSecurityManager();
+  @Override
+  public void beforeEach(final ExtensionContext context) {
+    // Should we fail on a System.exit() rather than letting it bubble out?
+    failOnSystemExit = getAnnotation(context, FailOnSystemExit.class).isPresent();
 
-        // Should we fail on a System.exit() rather than letting it bubble out?
-        failOnSystemExit = getAnnotation(context, FailOnSystemExit.class).isPresent();
+    getAnnotation(context, ExpectSystemExit.class).ifPresent(code -> expectSystemExit = true);
 
-        // Get the expected exit status code, if any
-        getAnnotation(context, ExpectSystemExitWithStatus.class).ifPresent(code -> expectedStatusCode = code.value());
+    getAnnotation(context, ExpectSystemExitWithStatus.class)
+        .ifPresent(
+            code -> {
+              expectSystemExit = true;
+              expectedStatusCode = code.value();
+            });
+  }
 
-        // Install our own SecurityManager
-        disallowExitSecurityManager = new DisallowExitSecurityManager(System.getSecurityManager());
-        System.setSecurityManager(disallowExitSecurityManager);
+  /**
+   * This is here so we can catch exceptions thrown by our own security manager and prevent them
+   * from stopping the annotated test. If anything other than our own exception comes through, throw
+   * it because the system SecurityManager to which we delegate prevented some other action from
+   * happening.
+   *
+   * @param context the current extension context; never {@code null}
+   * @param throwable the {@code Throwable} to handle; never {@code null}
+   * @throws Throwable if the throwable argument is not a SystemExitPreventedException
+   */
+  @Override
+  public void handleTestExecutionException(
+      final ExtensionContext context, final Throwable throwable) throws Throwable {
+    if (!(throwable instanceof SystemExitException)) {
+      throw throwable;
     }
+    systemExitCalled = true;
+    systemExitCode = ((SystemExitException) throwable).getExitCode();
+  }
 
-    /**
-     * This is here so we can catch exceptions thrown by our own security manager and prevent them from
-     * stopping the annotated test. If anything other than our own exception comes through, throw it because
-     * the system SecurityManager to which we delegate prevented some other action from happening.
-     *
-     * @param context   the current extension context; never {@code null}
-     * @param throwable the {@code Throwable} to handle; never {@code null}
-     * @throws Throwable if the throwable argument is not a SystemExitPreventedException
-     */
-    @Override
-    public void handleTestExecutionException(ExtensionContext context, Throwable throwable) throws Throwable {
-        if (!(throwable instanceof SystemExitPreventedException)) {
-            throw throwable;
-        }
+  // Find the annotation on a method, or failing that, a class.
+  private <T extends Annotation> Optional<T> getAnnotation(
+      final ExtensionContext context, final Class<T> annotationClass) {
+    final Optional<T> method = findAnnotation(context.getTestMethod(), annotationClass);
+    if (method.isPresent()) {
+      return method;
     }
-
-    // Find the annotation on a method, or failing that, a class.
-    private <T extends Annotation> Optional<T> getAnnotation(final ExtensionContext context, final Class<T> annotationClass) {
-        final Optional<T> method = findAnnotation(context.getTestMethod(), annotationClass);
-        if (method.isPresent()) {
-            return method;
-        } else {
-            return findAnnotation(context.getTestClass(), annotationClass);
-        }
-    }
+    return findAnnotation(context.getTestClass(), annotationClass);
+  }
 }

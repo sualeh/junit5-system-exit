@@ -32,12 +32,10 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * This is a marker annotation that indicates the given test method or class is expected
- * to call System.exit()
+ * This is a marker annotation that indicates the given test method or class is expected to call
+ * System.exit()
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 @ExtendWith(SystemExitExtension.class)
-public @interface ExpectSystemExit {
-
-}
+public @interface ExpectSystemExit {}

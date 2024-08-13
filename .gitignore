@@ -7,3 +7,6 @@
 /out/
 gradle.properties
 /target/
+.project
+.classpath
+.settings/
